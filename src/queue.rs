@@ -1,6 +1,6 @@
-use std::{pin::Pin, time::Duration};
+use std::time::Duration;
 
-use crate::{job::Job, processor::Processor};
+use crate::job::Job;
 
 #[derive(Default)]
 pub enum RetryStrategy {
@@ -15,25 +15,26 @@ pub enum ProcessResult {
     Failure,
 }
 
-type AsyncCallback<DataType> =
-    Box<dyn FnMut(&mut DataType) -> Pin<Box<dyn Future<Output = ProcessResult> + Send>>>;
-
-pub struct Queue<DataType> {
+pub struct Queue<DataType, Callback, Fut>
+where
+    Callback: FnMut(DataType) -> Fut,
+    Fut: Future<Output = ProcessResult>,
+{
     jobs: Vec<Job<DataType>>,
     retry_strategy: RetryStrategy,
-    callback: AsyncCallback<DataType>,
+    callback: Callback,
 }
 
-impl<DataType> Queue<DataType> {
-    pub fn new<F, Fut>(mut callback: F) -> Self
-    where
-        F: for<'a> FnMut(&'a mut DataType) -> Fut + 'static,
-        Fut: Future<Output = ProcessResult> + Send + 'static,
-    {
+impl<DataType, Callback, Fut> Queue<DataType, Callback, Fut>
+where
+    Callback: FnMut(DataType) -> Fut,
+    Fut: Future<Output = ProcessResult>,
+{
+    pub fn new(callback: Callback) -> Self {
         Self {
             jobs: Vec::new(),
             retry_strategy: RetryStrategy::default(),
-            callback: Box::new(move |x| Box::pin(callback(x))),
+            callback,
         }
     }
 
@@ -48,8 +49,8 @@ impl<DataType> Queue<DataType> {
 
     pub async fn run(&mut self) {
         loop {
-            if let Some(mut job) = self.jobs.pop() {
-                (self.callback)(&mut job.data).await;
+            if let Some(job) = self.jobs.pop() {
+                (self.callback)(job.data).await;
             }
             std::thread::sleep(Duration::from_millis(50));
         }

@@ -8,8 +8,6 @@ enum JobStatus {
     Paused,
 }
 
-enum JobMessage {}
-
 pub(crate) struct Job<DataType> {
     id: usize,
     retries: usize,

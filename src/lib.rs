@@ -6,7 +6,8 @@ mod runner;
 
 #[cfg(test)]
 mod tests {
-    use connection::Connection;
+    use std::time::Duration;
+
     use queue::{ProcessResult, Queue};
 
     use super::*;
@@ -14,16 +15,20 @@ mod tests {
     struct MyData {
         num: usize,
     }
-    async fn proc<'a>(data: &'a mut MyData) -> ProcessResult {
-        println!("Processed {} times", &data.num);
+    async fn proc(data: &mut MyData) -> ProcessResult {
+        for _ in 0..10 {
+            println!("Processed {} times", data.num);
+            data.num += 1;
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
         ProcessResult::Success
     }
 
     #[tokio::test]
     async fn it_works() {
         let mut queue = Queue::new(proc);
-        let data = MyData { num: 1 };
-        queue.create_job(data);
+        let mut data = MyData { num: 1 };
+        queue.create_job(&mut data);
 
         queue.run().await;
     }
