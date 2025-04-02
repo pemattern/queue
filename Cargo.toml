@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 tokio = { version = "1.44.1", features = ["macros", "rt", "time"] }
+uuid = { version = "1.16.0", features = ["v7"] }

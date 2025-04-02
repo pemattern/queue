@@ -1,8 +1,5 @@
-mod connection;
-mod job;
-mod processor;
-mod queue;
-mod runner;
+pub mod job;
+pub mod queue;
 
 #[cfg(test)]
 mod tests {
@@ -19,6 +16,9 @@ mod tests {
         for _ in 0..10 {
             println!("Processed {} times", data.num);
             data.num += 1;
+            if data.num == 3 {
+                return ProcessResult::Failure;
+            }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
         ProcessResult::Success

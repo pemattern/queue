@@ -1,18 +1,24 @@
-use std::time::Duration;
+use std::collections::VecDeque;
 
 use crate::job::Job;
-
-#[derive(Default)]
-pub enum RetryStrategy {
-    #[default]
-    Never,
-    Constant(usize),
-    Map(fn(usize) -> usize),
-}
 
 pub enum ProcessResult {
     Success,
     Failure,
+}
+
+pub struct QueueOptions {
+    concurrency: usize,
+    max_retries: usize,
+}
+
+impl Default for QueueOptions {
+    fn default() -> Self {
+        Self {
+            concurrency: 1,
+            max_retries: 1,
+        }
+    }
 }
 
 pub struct Queue<DataType, Callback, Fut>
@@ -20,9 +26,12 @@ where
     Callback: FnMut(DataType) -> Fut,
     Fut: Future<Output = ProcessResult>,
 {
-    jobs: Vec<Job<DataType>>,
-    retry_strategy: RetryStrategy,
+    delayed_jobs: Vec<Job<DataType>>,
+    failed_jobs: Vec<Job<DataType>>,
+    waiting_jobs: VecDeque<Job<DataType>>,
+    active_jobs: Vec<Job<DataType>>,
     callback: Callback,
+    options: QueueOptions,
 }
 
 impl<DataType, Callback, Fut> Queue<DataType, Callback, Fut>
@@ -32,27 +41,37 @@ where
 {
     pub fn new(callback: Callback) -> Self {
         Self {
-            jobs: Vec::new(),
-            retry_strategy: RetryStrategy::default(),
+            delayed_jobs: Vec::new(),
+            failed_jobs: Vec::new(),
+            waiting_jobs: VecDeque::new(),
+            active_jobs: Vec::new(),
             callback,
+            options: QueueOptions::default(),
         }
     }
 
     pub fn create_job(&mut self, data: DataType) {
-        let job = Job::new(self.next_id(), data);
-        self.jobs.push(job);
+        let job = Job::new(data);
+        self.waiting_jobs.push_back(job);
     }
 
-    fn next_id(&self) -> usize {
-        self.jobs.iter().map(|item| item.id()).max().unwrap_or(0) + 1
-    }
-
-    pub async fn run(&mut self) {
+    pub async fn run(mut self) {
         loop {
-            if let Some(job) = self.jobs.pop() {
-                (self.callback)(job.data).await;
-            }
-            std::thread::sleep(Duration::from_millis(50));
+            self = self.advance_jobs();
         }
+    }
+
+    fn advance_jobs(mut self) -> Self {
+        let instant = std::time::Instant::now();
+        self.waiting_jobs.extend(
+            self.delayed_jobs
+                .drain(..)
+                .filter(|job| job.is_ready(&instant)),
+        );
+        while self.active_jobs.len() < self.options.concurrency && !self.waiting_jobs.is_empty() {
+            let job = self.waiting_jobs.pop_front().unwrap();
+            self.active_jobs.push(job);
+        }
+        self
     }
 }
