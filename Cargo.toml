@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tokio = { version = "1.44.1", features = ["macros", "rt", "time"] }
+tokio = { version = "1.44.1", features = ["macros", "rt", "sync", "time"] }
 uuid = { version = "1.16.0", features = ["v7"] }

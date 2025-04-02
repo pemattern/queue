@@ -1,5 +1,6 @@
 pub mod job;
 pub mod queue;
+pub mod worker;
 
 #[cfg(test)]
 mod tests {
