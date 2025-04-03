@@ -1,4 +1,6 @@
-use std::collections::VecDeque;
+use std::sync::Arc;
+
+use tokio::sync::Semaphore;
 
 use crate::job::Job;
 
@@ -9,15 +11,11 @@ pub enum ProcessResult {
 
 pub struct QueueOptions {
     concurrency: usize,
-    max_retries: usize,
 }
 
 impl Default for QueueOptions {
     fn default() -> Self {
-        Self {
-            concurrency: 1,
-            max_retries: 1,
-        }
+        Self { concurrency: 1 }
     }
 }
 
@@ -28,6 +26,7 @@ where
 {
     jobs: Vec<Job<DataType>>,
     callback: Callback,
+    semaphore: Arc<Semaphore>,
     options: QueueOptions,
 }
 
@@ -37,15 +36,17 @@ where
     Fut: Future<Output = ProcessResult>,
 {
     pub fn new(callback: Callback) -> Self {
+        let options = QueueOptions::default();
         Self {
             jobs: Vec::new(),
             callback,
-            options: QueueOptions::default(),
+            semaphore: Arc::new(Semaphore::new(options.concurrency)),
+            options,
         }
     }
 
     pub fn create_job(&mut self, data: DataType) {
-        let job = Job::new(data);
+        let job = Job::new(data, self.semaphore.clone());
         self.jobs.push(job);
     }
 

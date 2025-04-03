@@ -1,4 +1,25 @@
-use std::time::{Duration, Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
+
+use tokio::sync::Semaphore;
+
+pub(crate) enum JobMessage {
+    Success,
+    Failure,
+    DelayExpired,
+}
+
+#[derive(Default)]
+enum JobStatus {
+    Active,
+    #[default]
+    Waiting,
+    Completed,
+    Failed,
+    Delayed,
+}
 
 #[derive(Default)]
 pub enum RetryStrategy {
@@ -10,7 +31,8 @@ pub enum RetryStrategy {
 
 #[derive(Default)]
 pub struct JobOptions {
-    pub retry_strategy: RetryStrategy,
+    pub(crate) retry_strategy: RetryStrategy,
+    pub(crate) max_retries: usize,
 }
 
 pub(crate) struct Job<DataType> {
@@ -19,11 +41,13 @@ pub(crate) struct Job<DataType> {
     pub(crate) last_run_instant: Instant,
     pub(crate) retries: usize,
     pub(crate) data: DataType,
+    pub(crate) semaphore: Arc<Semaphore>,
+    pub(crate) status: JobStatus,
     pub(crate) options: JobOptions,
 }
 
 impl<DataType> Job<DataType> {
-    pub fn new(data: DataType) -> Self {
+    pub fn new(data: DataType, semaphore: Arc<Semaphore>) -> Self {
         let uuid = uuid::Uuid::now_v7();
         let instant = Instant::now();
         Self {
@@ -32,6 +56,8 @@ impl<DataType> Job<DataType> {
             last_run_instant: instant,
             retries: 0,
             data,
+            semaphore,
+            status: JobStatus::default(),
             options: JobOptions::default(),
         }
     }
@@ -50,6 +76,21 @@ impl<DataType> Job<DataType> {
             RetryStrategy::Map(map) => {
                 now.duration_since(self.last_run_instant) >= map(self.retries)
             }
+        }
+    }
+
+    pub fn send_message(&mut self, message: JobMessage) {
+        match message {
+            JobMessage::Success => self.status = JobStatus::Completed,
+            JobMessage::Failure => {
+                self.retries += 1;
+                if self.retries >= self.options.max_retries {
+                    self.status = JobStatus::Failed;
+                } else {
+                    self.status = JobStatus::Delayed;
+                }
+            }
+            JobMessage::DelayExpired => self.status = JobStatus::Waiting,
         }
     }
 }
