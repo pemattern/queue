@@ -2,7 +2,9 @@ use std::{sync::Arc, time::Duration};
 
 use tokio::{sync::Semaphore, task::JoinSet};
 
-use crate::job::Job;
+use crate::job::{Job, JobOptions, JobStatus};
+
+pub type QueueResult<DataType> = Result<Job<DataType>, Job<DataType>>;
 
 pub struct QueueOptions {
     concurrency: usize,
@@ -25,7 +27,7 @@ impl<DataType, Callback, Fut> Queue<DataType, Callback>
 where
     DataType: Send + 'static,
     Callback: Fn(Job<DataType>) -> Fut + Clone + Copy + Send + 'static,
-    Fut: Future<Output = Result<DataType, DataType>> + Send + 'static,
+    Fut: Future<Output = Result<Job<DataType>, Job<DataType>>> + Send + 'static,
 {
     pub fn new(callback: Callback) -> Self {
         let options = QueueOptions::default();
@@ -44,11 +46,17 @@ where
 
     pub async fn run(self) {
         let mut set = JoinSet::new();
-        for job in self.jobs {
+        for mut job in self.jobs {
             let semaphore = self.semaphore.clone();
             set.spawn(async move {
-                let _permit = semaphore.acquire_owned().await.unwrap();
+                let permit = semaphore.acquire_owned().await.unwrap();
+                job.status = JobStatus::Active;
                 let result = (self.callback)(job).await;
+                drop(permit);
+                match result {
+                    Ok(mut job) => job.status = JobStatus::Completed,
+                    Err(mut job) => job.status = JobStatus::Delayed,
+                }
             });
         }
 

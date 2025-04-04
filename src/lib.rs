@@ -8,7 +8,7 @@ mod tests {
 
     use queue::Queue;
 
-    use crate::job::Job;
+    use crate::{job::Job, queue::QueueResult};
 
     use super::*;
 
@@ -16,17 +16,17 @@ mod tests {
     struct MyData {
         num: usize,
     }
-    async fn proc(mut job: Job<MyData>) -> Result<MyData, MyData> {
+    async fn proc(mut job: Job<MyData>) -> QueueResult<MyData> {
         println!("Processing Job: {}", job.uuid);
         for _ in 0..10 {
             println!("Processed {} times", job.data.num);
             job.data.num += 1;
             if job.data.num == 3 {
-                return Err(job.data);
+                return Err(job);
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        Ok(job.data)
+        Ok(job)
     }
 
     #[tokio::test]

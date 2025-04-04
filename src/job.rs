@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 #[derive(Default)]
-enum JobStatus {
+pub(crate) enum JobStatus {
     Active,
     #[default]
     Waiting,
