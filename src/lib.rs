@@ -6,31 +6,36 @@ pub mod worker;
 mod tests {
     use std::time::Duration;
 
-    use queue::{ProcessResult, Queue};
+    use queue::Queue;
+
+    use crate::job::Job;
 
     use super::*;
 
+    #[derive(Clone)]
     struct MyData {
         num: usize,
     }
-    async fn proc(data: &mut MyData) -> ProcessResult {
+    async fn proc(mut job: Job<MyData>) -> Result<MyData, MyData> {
+        println!("Processing Job: {}", job.uuid);
         for _ in 0..10 {
-            println!("Processed {} times", data.num);
-            data.num += 1;
-            if data.num == 3 {
-                return ProcessResult::Failure;
+            println!("Processed {} times", job.data.num);
+            job.data.num += 1;
+            if job.data.num == 3 {
+                return Err(job.data);
             }
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        ProcessResult::Success
+        Ok(job.data)
     }
 
     #[tokio::test]
     async fn it_works() {
         let mut queue = Queue::new(proc);
-        let mut data = MyData { num: 1 };
-        queue.create_job(&mut data);
-
+        for i in 0..100 {
+            let data = MyData { num: i };
+            queue.create_job(data);
+        }
         queue.run().await;
     }
 }
