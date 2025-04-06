@@ -54,15 +54,21 @@ impl<DataType> Job<DataType> {
         self
     }
 
-    pub fn is_ready(&self, now: &Instant) -> bool {
+    pub(crate) fn get_delay(&self) -> Duration {
         match self.options.retry_strategy {
-            RetryStrategy::Never => false,
-            RetryStrategy::Constant(duration) => {
-                now.duration_since(self.last_run_instant) >= duration
-            }
-            RetryStrategy::Map(map) => {
-                now.duration_since(self.last_run_instant) >= map(self.retries)
-            }
+            RetryStrategy::Never => Duration::MAX,
+            RetryStrategy::Constant(duration) => duration,
+            RetryStrategy::Map(map) => map(self.retries),
         }
+    }
+
+    pub(crate) fn should_fail(&self) -> bool {
+        matches!(self.options.retry_strategy, RetryStrategy::Never)
+            || self.retries >= self.options.max_retries
+    }
+
+    pub(crate) async fn delay(&mut self) {
+        self.status = JobStatus::Delayed;
+        tokio::time::sleep(self.get_delay()).await;
     }
 }

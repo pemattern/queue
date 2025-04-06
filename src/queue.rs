@@ -1,12 +1,12 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
-use tokio::{sync::Semaphore, task::JoinSet};
+use tokio::sync::Semaphore;
 
-use crate::job::{Job, JobOptions, JobStatus};
+use crate::job::{Job, JobStatus};
 
 pub type QueueResult<DataType> = Result<Job<DataType>, Job<DataType>>;
 
-pub struct QueueOptions {
+struct QueueOptions {
     concurrency: usize,
 }
 
@@ -27,7 +27,7 @@ impl<DataType, Callback, Fut> Queue<DataType, Callback>
 where
     DataType: Send + 'static,
     Callback: Fn(Job<DataType>) -> Fut + Clone + Copy + Send + 'static,
-    Fut: Future<Output = Result<Job<DataType>, Job<DataType>>> + Send + 'static,
+    Fut: Future<Output = QueueResult<DataType>> + Send + 'static,
 {
     pub fn new(callback: Callback) -> Self {
         let options = QueueOptions::default();
@@ -39,27 +39,44 @@ where
         }
     }
 
-    pub fn create_job(&mut self, data: DataType) {
+    pub async fn create_job(&mut self, data: DataType) {
         let job = Job::new(data);
-        self.jobs.push(job);
+        tokio::spawn(self.run_job(job));
     }
 
-    pub async fn run(self) {
-        let mut set = JoinSet::new();
-        for mut job in self.jobs {
+    async fn run_job(&self, mut job: Job<DataType>) {
+        loop {
             let semaphore = self.semaphore.clone();
-            set.spawn(async move {
+            let callback = self.callback.clone();
+            let handle = tokio::spawn(async move {
+                job.status = JobStatus::Waiting;
                 let permit = semaphore.acquire_owned().await.unwrap();
                 job.status = JobStatus::Active;
-                let result = (self.callback)(job).await;
+                let result = (callback)(job).await;
                 drop(permit);
-                match result {
-                    Ok(mut job) => job.status = JobStatus::Completed,
-                    Err(mut job) => job.status = JobStatus::Delayed,
-                }
+                let status = match result {
+                    Ok(mut job) => {
+                        job.status = JobStatus::Completed;
+                        (job, JobStatus::Completed)
+                    }
+                    Err(mut job) => {
+                        if job.should_fail() {
+                            job.status = JobStatus::Failed;
+                            (job, JobStatus::Failed)
+                        } else {
+                            job.delay().await;
+                            (job, JobStatus::Delayed)
+                        }
+                    }
+                };
+                status
             });
+            let job_result = handle.await.unwrap();
+            if matches!(job_result.1, JobStatus::Delayed) {
+                job = job_result.0;
+            } else {
+                break;
+            }
         }
-
-        tokio::time::sleep(Duration::from_secs(10)).await;
     }
 }

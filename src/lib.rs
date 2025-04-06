@@ -34,8 +34,7 @@ mod tests {
         let mut queue = Queue::new(proc);
         for i in 0..100 {
             let data = MyData { num: i };
-            queue.create_job(data);
+            queue.create_job(data).await;
         }
-        queue.run().await;
     }
 }
