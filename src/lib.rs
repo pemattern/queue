@@ -11,17 +11,16 @@ mod tests {
     use crate::{job::Job, queue::QueueResult};
 
     use super::*;
+    use rand::prelude::*;
 
     #[derive(Clone)]
     struct MyData {
         num: usize,
     }
     async fn proc(mut job: Job<MyData>) -> QueueResult<MyData> {
-        println!("Processing Job: {}", job.uuid);
-        for _ in 0..10 {
-            println!("Processed {} times", job.data.num);
-            job.data.num += 1;
-            if job.data.num == 3 {
+        for i in 0..10 {
+            job.data.num = i;
+            if job.data.num == rand::rng().random_range(0..10) {
                 return Err(job);
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -34,7 +33,8 @@ mod tests {
         let mut queue = Queue::new(proc);
         for i in 0..100 {
             let data = MyData { num: i };
-            queue.create_job(data).await;
+            queue.create_job(data);
         }
+        queue.run().await;
     }
 }

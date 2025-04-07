@@ -21,14 +21,14 @@ pub enum RetryStrategy {
 #[derive(Default)]
 pub struct JobOptions {
     pub(crate) retry_strategy: RetryStrategy,
-    pub(crate) max_retries: usize,
+    pub(crate) max_attemps: usize,
 }
 
 pub struct Job<DataType> {
     pub(crate) uuid: uuid::Uuid,
     pub(crate) creation_instant: Instant,
     pub(crate) last_run_instant: Instant,
-    pub(crate) retries: usize,
+    pub(crate) attemps: usize,
     pub(crate) data: DataType,
     pub(crate) status: JobStatus,
     pub(crate) options: JobOptions,
@@ -42,7 +42,7 @@ impl<DataType> Job<DataType> {
             uuid,
             creation_instant: instant,
             last_run_instant: instant,
-            retries: 0,
+            attemps: 0,
             data,
             status: JobStatus::default(),
             options: JobOptions::default(),
@@ -58,13 +58,13 @@ impl<DataType> Job<DataType> {
         match self.options.retry_strategy {
             RetryStrategy::Never => Duration::MAX,
             RetryStrategy::Constant(duration) => duration,
-            RetryStrategy::Map(map) => map(self.retries),
+            RetryStrategy::Map(map) => map(self.attemps),
         }
     }
 
     pub(crate) fn should_fail(&self) -> bool {
         matches!(self.options.retry_strategy, RetryStrategy::Never)
-            || self.retries >= self.options.max_retries
+            || self.attemps >= self.options.max_attemps
     }
 
     pub(crate) async fn delay(&mut self) {
