@@ -1,4 +1,4 @@
-use std::{sync::Arc, thread::JoinHandle, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use tokio::sync::{
     Semaphore,
@@ -20,6 +20,7 @@ impl Default for QueueOptions {
 }
 
 pub struct Queue<DataType, Callback> {
+    name: String,
     active_thread: tokio::task::JoinHandle<()>,
     delayed_thread: tokio::task::JoinHandle<()>,
     callback: Callback,
@@ -33,7 +34,8 @@ where
     Callback: Fn(Job<DataType>) -> Fut + Clone + Copy + Send + 'static,
     Fut: Future<Output = QueueResult<DataType>> + Send + 'static,
 {
-    pub fn new(callback: Callback) -> Self {
+    pub fn new(name: impl Into<String>, callback: Callback) -> Self {
+        let name = name.into();
         let options = QueueOptions::default();
         let (add_job_sender, add_job_receiver) = mpsc::unbounded_channel();
         let (delay_job_sender, delay_job_receiver) = mpsc::unbounded_channel();
@@ -52,6 +54,7 @@ where
         ));
 
         Self {
+            name,
             active_thread,
             delayed_thread,
             callback,

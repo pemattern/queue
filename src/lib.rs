@@ -30,7 +30,7 @@ mod tests {
 
     #[tokio::test]
     async fn it_works() {
-        let mut queue = Queue::new(proc);
+        let mut queue = Queue::new("test queue", proc);
         for i in 0..100 {
             let data = MyData { num: i };
             queue.create_job(data);
